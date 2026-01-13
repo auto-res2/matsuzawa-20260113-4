@@ -1,0 +1,18 @@
+{
+    "primary_metric": "accuracy",
+    "metrics": {
+        "accuracy": {
+            "comparative-1-gemma-VTAB+MD": 0.0,
+            "proposed-gemma-VTAB+MD": 0.0
+        }
+    },
+    "best_proposed": {
+        "run_id": "proposed-gemma-VTAB+MD",
+        "value": 0.0
+    },
+    "best_baseline": {
+        "run_id": "comparative-1-gemma-VTAB+MD",
+        "value": 0.0
+    },
+    "gap": 0.0
+}
