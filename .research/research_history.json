@@ -2,14 +2,14 @@
   "research_topic": "Data-efficient image classification methods using novel regularization and augmentation techniques",
   "queries": [
     "data-efficient image classification",
-    "few-shot classification",
-    "consistency regularization",
-    "semi-supervised image classification",
-    "self-supervised pretraining",
-    "mixup augmentation",
-    "CutMix augmentation",
-    "AutoAugment policy",
+    "regularization image classification",
+    "augmentation strategies image classification",
+    "consistency regularization image",
+    "mixup augmentation regularization",
+    "semi supervised data efficient",
+    "entropy minimization regularization",
     "virtual adversarial training",
-    "pseudo-labeling regularization"
+    "contrastive augmentation methods",
+    "label efficient learning"
   ]
 }
