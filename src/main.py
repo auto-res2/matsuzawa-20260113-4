@@ -19,7 +19,13 @@ def main(cfg: DictConfig) -> int:
     results_dir = Path(cfg.results_dir) if hasattr(cfg, 'results_dir') else Path('./results')
     results_dir.mkdir(parents=True, exist_ok=True)
 
-    run_id = getattr(cfg.run, 'run_id', None) or cfg.run.get('run_id', 'default-run')
+    # Handle both string override and config object cases
+    if isinstance(cfg.run, str):
+        # When run is overridden as a string, use run_id from top-level config
+        run_id = getattr(cfg, 'run_id', cfg.run)
+    else:
+        # When run is a config object, get run_id from it
+        run_id = getattr(cfg.run, 'run_id', 'default-run')
     mode = getattr(cfg, 'mode', 'full')
 
     trainer_path = Path(__file__).resolve().parents[0] / 'train.py'

@@ -99,23 +99,56 @@ def main(cfg: DictConfig) -> int:
     # Resolve run-specific overrides if a per-run YAML exists
     root = Path(__file__).resolve().parents[1]  # repository root (contains config/)
     run_id = None
-    if isinstance(cfg, DictConfig) and hasattr(cfg, "run"):
-        run_id = cfg.run.run_id
+    # Handle both nested (cfg.run.run_id) and flat (cfg.run_id) config structures
+    if isinstance(cfg, DictConfig):
+        if hasattr(cfg, "run_id"):
+            run_id = cfg.run_id
+        elif hasattr(cfg, "run") and hasattr(cfg.run, "run_id"):
+            run_id = cfg.run.run_id
+
         if run_id:
             per_run_yaml = root / "config" / "runs" / f"{run_id}.yaml"
             if per_run_yaml.exists():
                 run_cfg = OmegaConf.load(str(per_run_yaml))
                 cfg = OmegaConf.merge(cfg, run_cfg)  # type: ignore[arg-type]
-    mode = getattr(cfg.run, "mode", getattr(cfg, "mode", "full"))
+
+    # Parse additional_params if present (e.g., "reg_lambda=0")
+    if hasattr(cfg, "training") and hasattr(cfg.training, "additional_params"):
+        additional_params_str = str(cfg.training.additional_params)
+        for param in additional_params_str.split():
+            if "=" in param:
+                key, value = param.split("=", 1)
+                key = key.strip()
+                value = value.strip()
+                # Try to convert to appropriate type
+                try:
+                    if "." in value:
+                        value = float(value)
+                    else:
+                        value = int(value)
+                except ValueError:
+                    pass  # Keep as string
+                # Set the parameter in cfg.training
+                setattr(cfg.training, key, value)
+
+    # Get mode from either cfg.mode or cfg.run.mode
+    mode = getattr(cfg, "mode", None)
+    if mode is None and hasattr(cfg, "run"):
+        mode = getattr(cfg.run, "mode", "full")
+    if mode is None:
+        mode = "full"
     # Mode-based toggles (trial vs full)
+    # Ensure wandb config exists
+    if not hasattr(cfg, "wandb"):
+        cfg.wandb = OmegaConf.create({"mode": "online"})
+
     if mode == "trial":
         cfg.wandb.mode = "disabled"
-        if hasattr(cfg.optuna, "enabled"):
+        if hasattr(cfg, "optuna") and hasattr(cfg.optuna, "enabled"):
             cfg.optuna.n_trials = 0
     elif mode == "full":
-        cfg.wandb.mode = "online" if hasattr(cfg, "wandb") else "online"
+        cfg.wandb.mode = "online"
     else:
-        cfg.wandb = cfg.get("wandb", {})
         cfg.wandb.mode = "online"
 
     # Setup deterministic seed
@@ -125,10 +158,12 @@ def main(cfg: DictConfig) -> int:
     # WandB init (if enabled)
     wandb_run = None
     if getattr(cfg, "wandb", {}).get("mode", "online") != "disabled":
+        entity = getattr(cfg.wandb, "entity", None)
+        project = getattr(cfg.wandb, "project", "default-project")
         wandb_run = wandb.init(
-            entity=cfg.wandb.entity,
-            project=cfg.wandb.project,
-            id=getattr(cfg.run, "run_id", "default-run"),
+            entity=entity,
+            project=project,
+            id=run_id or "default-run",
             config=OmegaConf.to_container(cfg, resolve=True),
             resume="allow",
         )
@@ -168,7 +203,14 @@ def main(cfg: DictConfig) -> int:
     model.train()
     global_step = 0
     best_val_acc = 0.0
-    results_dir = Path(cfg.run.results_dir) if hasattr(cfg, "run") and hasattr(cfg.run, "results_dir") else Path("./results")
+    # Get results_dir from cfg.results_dir or cfg.run.results_dir
+    results_dir = None
+    if hasattr(cfg, "results_dir"):
+        results_dir = Path(cfg.results_dir)
+    elif hasattr(cfg, "run") and hasattr(cfg.run, "results_dir"):
+        results_dir = Path(cfg.run.results_dir)
+    else:
+        results_dir = Path("./results")
     current_run_dir = results_dir / (run_id or "default-run")
     current_run_dir.mkdir(parents=True, exist_ok=True)
     metrics_history: List[dict] = []

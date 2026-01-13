@@ -96,9 +96,28 @@ class SimpleBackbone(nn.Module):
 class CTGRNet(nn.Module):
     def __init__(self, cfg, num_classes: int = 10) -> None:
         super().__init__()
-        base_channels = int(cfg.model.get("base_channels", 16))
-        lambda_reg = float(cfg.training.get("reg_lambda", 0.01))
-        eta = float(cfg.training.get("eta", 0.1))
+        # Handle both DictConfig and nested structures
+        if hasattr(cfg, "model") and hasattr(cfg.model, "base_channels"):
+            base_channels = int(cfg.model.base_channels)
+        elif hasattr(cfg, "model"):
+            base_channels = int(getattr(cfg.model, "base_channels", 16))
+        else:
+            base_channels = 16
+
+        if hasattr(cfg, "training") and hasattr(cfg.training, "reg_lambda"):
+            lambda_reg = float(cfg.training.reg_lambda)
+        elif hasattr(cfg, "training"):
+            lambda_reg = float(getattr(cfg.training, "reg_lambda", 0.01))
+        else:
+            lambda_reg = 0.01
+
+        if hasattr(cfg, "training") and hasattr(cfg.training, "eta"):
+            eta = float(cfg.training.eta)
+        elif hasattr(cfg, "training"):
+            eta = float(getattr(cfg.training, "eta", 0.1))
+        else:
+            eta = 0.1
+
         self.backbone = SimpleBackbone(in_channels=3, base_channels=base_channels, lambda_reg=lambda_reg, eta=eta)
         self.fc = nn.Linear(self.backbone.out_dim, num_classes)
         self.ctgr_blocks = self.backbone.ctgr_blocks
