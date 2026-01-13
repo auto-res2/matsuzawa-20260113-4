@@ -32,3 +32,19 @@ Key 'run_id' is not in struct
 Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
 === [TRIAL RUN] PASSED for proposed-gemma-VTAB+MD at Tue Jan 13 11:43:28 UTC 2026 ===
 
+=== [UV SYNC] Start at Tue Jan 13 11:45:00 UTC 2026 ===
+=== [UV SYNC] Finished successfully at Tue Jan 13 11:45:00 UTC 2026 ===
+=== [FULL EXPERIMENT] Start for proposed-gemma-VTAB+MD at Tue Jan 13 11:45:00 UTC 2026 ===
+/workspace/actions-runner/_work/matsuzawa-20260113-4/matsuzawa-20260113-4/src/train.py:97: UserWarning: 
+The version_base parameter is not specified.
+Please specify a compatability version level, or None.
+Will assume defaults for version 1.1
+  @hydra.main(config_path="../config", config_name="config")
+Could not override 'run_id'.
+To append to your config use +run_id=proposed-gemma-VTAB+MD
+Key 'run_id' is not in struct
+    full_key: run_id
+    object_type=dict
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
+=== [FULL EXPERIMENT] PASSED for proposed-gemma-VTAB+MD at Tue Jan 13 11:45:05 UTC 2026 ===
