@@ -1737,5 +1737,112 @@
     "experimental_code": "import torch\nimport torch.nn as nn\n\nclass CaSEBlock(nn.Module):\n    def __init__(self, cin, reduction=16):\n        super().__init__()\n        # minimal CaSE-like gamma generator (existing implementation placeholder)\n        self.cin = cin\n        hidden = max(4, cin // reduction)\n        self.gamma_generator = nn.Sequential(\n            nn.Linear(cin, hidden), nn.SiLU(),\n            nn.Linear(hidden, cin), nn.Sigmoid()\n        )\n        # initial gamma = 1.0 per channel\n        self.register_buffer('gamma', torch.ones(1, cin, 1, 1))\n\n    def compute_gamma(self, x):\n        with torch.no_grad():\n            return self.gamma\n\n    def forward(self, x):\n        gamma = self.compute_gamma(x)\n        out = gamma * x\n        return out\n\nclass CTGR_CABlock(nn.Module):\n    \"\"\"CaSE block with Cross-Task Gamma Regularization and EMA priors.\"\"\"\n    def __init__(self, cas_block: CaSEBlock, lambda_reg=0.0, eta=0.1):\n        super().__init__()\n        self.cas_block = cas_block\n        self.lambda_reg = lambda_reg\n        self.eta = eta  # EMA step\n        # per-layer priors (one mu per channel)\n        self.register_buffer('gamma_mu', torch.ones(1, cas_block.cin, 1, 1))\n        self._batch_gamma_sum = 0\n        self._batch_gamma_count = 0\n        self._reg_loss = torch.tensor(0.0)\n\n    def forward(self, x):\n        gamma = self.cas_block.compute_gamma(x)\n        y = gamma * x\n        if self.training and self.lambda_reg > 0:\n            # per-task gamma mean (spatially pooled)\n            gamma_mean = gamma.mean(dim=(0,2,3), keepdim=True)\n            # accumulate into batch for EMA\n            if self._batch_gamma_count == 0:\n                self._batch_gamma_sum = gamma_mean.clone()\n                self._batch_gamma_count = 1\n            else:\n                self._batch_gamma_sum += gamma_mean\n                self._batch_gamma_count += 1\n            # regression loss to mu\n            self._reg_loss = self.lambda_reg * ((gamma_mean - self.gamma_mu) ** 2).sum()\n        else:\n            self._reg_loss = torch.tensor(0.0, device=x.device)\n        return y\n\n    @property\n    def reg_loss(self):\n        return self._reg_loss\n\n    def finalize_batch(self):\n        if self._batch_gamma_count > 0:\n            batch_mean = self._batch_gamma_sum / self._batch_gamma_count\n            # EMA update of mu_l with optional task similarity weighting (simplified here)\n            self.gamma_mu = (1.0 - self.eta) * self.gamma_mu + self.eta * batch_mean\n        self._batch_gamma_sum = 0\n        self._batch_gamma_count = 0\n        self._reg_loss = torch.tensor(0.0)\n\n# Example usage inside a meta-training loop (high level)\ndef meta_train_step(batch_tasks, model, opt, device, lambda_ctgr=0.01, eta=0.1):\n    total_loss = 0.0\n    for cas_block in model.cas_blocks:\n        # ensure forward pass\n        x = batch_tasks.sample_input().to(device)\n        y = batch_tasks.sample_target().to(device)\n        out = cas_block(x)\n        # task loss L_task here would be defined elsewhere; use placeholder\n        L_task = nn.functional.cross_entropy(out, y)\n        reg = cas_block.reg_loss if hasattr(cas_block, 'reg_loss') else torch.tensor(0.0, device=device)\n        total_loss += L_task + reg\n    opt.zero_grad(); total_loss.backward(); opt.step()\n    # finalize EMA updates after batch end\n    for cas_block in model.cas_blocks:\n        cas_block.finalize_batch()\n\n# Minimal demonstration of integration with a training script:\n# - model should compose several CTGR_CABlock instances wrapping CaSE blocks\n# - loss = primary_loss + sum(ctgr_block.reg_loss)\n# - after a meta-batch, call finalize_batch() on all blocks to update mu_l\n",
     "expected_result": "We anticipate CaSE+CTGR-TG to achieve a modest but consistent improvement in average accuracy on VTAB+MD across 26 datasets, e.g., +0.8 to +2.5 percentage points, with reduced per-dataset variance in accuracy (smaller standard deviation across tasks). Secondary expectations include: (i) lower per-task gamma variance across tasks (σ_gamma^2 decreases by ~10-30%), (ii) comparable or slightly higher adaptation MACs due to the small reg term, but a net lower wall-clock time per task due to stabilized adaptation and reduced convergence time, and (iii) improved data-efficiency, evidenced by greater gains in few-shot regimes (e.g., 5-shot, 10-shot tasks) relative to full-data settings.",
     "expected_conclusion": "The proposed Cross-Task Gamma Regularization with Task Graph (CTGR-TG) yields stronger novelty by leveraging cross-task adaptation signals via learned priors and task similarity. It addresses a practical and socially valuable objective: robust, data-efficient image classification that remains reliable on resource-constrained devices. The approach generalizes beyond CaSE by offering a lightweight, architecture-agnostic regularizer that stabilizes task-specific adaptation, reduces variance across tasks, and improves performance in real-world, distributed, and edge-deployed settings. This advances both the theoretical understanding of cross-task adaptation and its practical deployment in diverse computer-vision applications."
+  },
+  "experimental_design": {
+    "experiment_summary": "This experimental plan evaluates the proposed Cross-Task Gamma Regularization with Task Graph (CTGR-TG) for CaSE-style adaptive blocks in a cross-task meta-learning setting. The core hypothesis is that learning per-layer gamma priors mu_l across tasks, and updating them via EMA in a task-graph-guided, lightweight regularization term, stabilizes task-specific adaptation while preserving CaSE advantages and enabling edge-deployable efficiency.\n\nWhat we test: (i) cross-task gamma alignment and its impact on generalization across diverse domains; (ii) how mu_l priors reduce per-task gamma variance and improve data-efficiency; (iii) architectural-agnostic integration with no forward-path changes beyond exposing gamma for reg-term; (iv) practical edge deployment feasibility via negligible overhead.\n\nWorkflow: episodic meta-training across 26 VTAB+MD datasets (and ORBIT as a cross-domain test bed). For each task, compute CaSE gamma_l^{τ} in all adaptive blocks; compute reg_loss = lambda_ctgr * sum_l ||gamma_l^{τ} - mu_l||^2; update mu_l with EMA across tasks in the meta-batch: mu_l <- (1-η) mu_l + η * mean_tau gamma_l^{τ}, optionally refined by TaskGraph guidance: mu_l <- (1-η) mu_l + η * sum_{τ'} S_{τ,τ'} gamma_l^{τ'}. Objective: L_total = L_task + reg_loss, where L_task is the CaSE-based loss.\n\nScale adaptation to Runner resources: we simulate meta-training with a 5-task meta-batch across 26 VTAB+MD datasets, using a small CaSE-augmented backbone (Gemma-4B-IT as a proxy for an edge-friendly, multi-modal backbone). We prune to a 5-Epoch meta-training budget with 4–8 task EMA windows and 8-task per-batch parallelism to fit GPU memory. Three seeds are run to assess stability. Primary metric is accuracy averaged across datasets. Secondary metrics include per-dataset gaps (max-min accuracy), cross-task gamma variance, and the adaptation MACs. The compare-and-control baselines are CaSE (no reg) and CaSE with OrgReg (L2 on gamma).\n\nModels and datasets are chosen to reflect edge-deployable settings while maintaining realism in cross-domain evaluation. The experimental setup leverages the provided VTAB+MD suite (26 datasets) with a lightweight meta-regularization signal to enforce cross-task gamma alignment with minimal overhead.",
+    "runner_config": {
+      "runner_label": [
+        "self-hosted",
+        "gpu-runner"
+      ],
+      "description": "NVIDIA A100 or H200, VRAM: 80 GB or more, RAM: 2048 GB or more"
+    },
+    "evaluation_metrics": [
+      {
+        "name": "accuracy",
+        "description": "Correctness: For each dataset, accuracy is the proportion of correctly predicted instances. Calculation: accuracy = (number of correct predictions) / (total predictions) per dataset; final primary metric is the mean accuracy across all datasets. Task appropriateness: Directly measures classification performance across diverse domains; appropriate for VTAB-style benchmarks. Visualizations: learning curves for accuracy over meta-iterations; per-dataset accuracy bar chart."
+      },
+      {
+        "name": "dataset_gap_accuracy",
+        "description": "Correctness: Assess uniformity of performance across datasets. Calculation: dataset_gap = max(dataset_accuracies) - min(dataset_accuracies); also report dataset_std = std(dataset_accuracies) across datasets. Task appropriateness: Measures cross-domain stability and generalization; a smaller gap indicates more uniform cross-domain performance."
+      },
+      {
+        "name": "gamma_variance",
+        "description": "Correctness: Track how much per-layer gamma scales vary across tasks. Calculation: for each layer l, compute var over tasks of gamma_l^{τ}; aggregate across layers (mean_var across layers). Task appropriateness: Directly quantifies cross-task adaptation stability the method targets. Visualizations: distribution plots of gamma across tasks per layer, and a summary bar of mean gamma variance."
+      },
+      {
+        "name": "adaptation_MACs",
+        "description": "Correctness: Quantify computational cost added by adaptation. Calculation: measure MACs during task-specific adaptation (forward/backward passes that update gamma) per task and average across tasks; compare to baseline. Task appropriateness: Captures practical overhead for edge deployment where compute is constrained."
+      },
+      {
+        "name": "reg_loss_value",
+        "description": "Correctness: Track the magnitude of the regularization term during training. Calculation: average reg_loss across meta-batches; track lambda_ctgr * sum_l ||gamma_l^{τ} - mu_l||^2; visualization: line plot of reg_loss over iterations."
+      }
+    ],
+    "models_to_use": [
+      "gemma-3-4b-it"
+    ],
+    "datasets_to_use": [
+      "VTAB+MD"
+    ],
+    "proposed_method": {
+      "method_name": "CTGR-TG",
+      "description": "Cross-Task Gamma Regularization with Task Graph (CTGR-TG) for CaSE-style adaptive blocks. Key components: (1) per-layer priors mu_l learned across tasks; (2) a lightweight reg-term that penalizes deviation of a task's per-layer gamma scales gamma_l^{τ} from mu_l; (3) EMA-based update of mu_l across tasks within a meta-training batch, optionally augmented by a learnable task similarity graph S that guides mu_l toward gamma_s of similar tasks; (4) architecture-agnostic integration exposing gamma for reg-term computation without forward-path changes. Introduces cross-task priors for per-layer scales, EMA-based, graph-informed priors, and lightweight, edge-friendly regularization that complements CaSE without modifying its adaptation pathway. A lightweight monitoring hook measures cross-task gamma alignment and online mu_l updates during meta-training.",
+      "training_config": {
+        "learning_rate": 0.0002,
+        "batch_size": 8,
+        "epochs": 5,
+        "optimizer": "adamw",
+        "warmup_steps": 200,
+        "weight_decay": 0.01,
+        "gradient_clip": 1.0,
+        "scheduler": "cosine",
+        "seed": 42,
+        "additional_params": "lambda_ctgr in [0.001,0.1], eta in [0.05,0.2], ema_window=4-8, S_enabled=true"
+      },
+      "optuna_config": {
+        "enabled": true,
+        "n_trials": 20,
+        "search_spaces": [
+          {
+            "param_name": "lambda_ctgr",
+            "distribution_type": "loguniform",
+            "low": -3.0,
+            "high": -1.0
+          },
+          {
+            "param_name": "eta",
+            "distribution_type": "uniform",
+            "low": 0.05,
+            "high": 0.2
+          },
+          {
+            "param_name": "ema_window_size",
+            "distribution_type": "int",
+            "low": 4.0,
+            "high": 8.0
+          },
+          {
+            "param_name": "S_weight",
+            "distribution_type": "uniform",
+            "low": 0.0,
+            "high": 1.0
+          }
+        ]
+      }
+    },
+    "comparative_methods": [
+      {
+        "method_name": "CaSE-Baseline",
+        "description": "CaSE without cross-task gamma regularization; standard per-task gamma adaptation with no priors or EMA updates.",
+        "training_config": {
+          "learning_rate": 0.0002,
+          "batch_size": 8,
+          "epochs": 5,
+          "optimizer": "adamw",
+          "warmup_steps": 200,
+          "weight_decay": 0.01,
+          "gradient_clip": 1.0,
+          "scheduler": "cosine",
+          "seed": 42,
+          "additional_params": "reg_lambda=0"
+        },
+        "optuna_config": {
+          "enabled": false,
+          "n_trials": 0,
+          "search_spaces": []
+        }
+      }
+    ]
   }
 }
