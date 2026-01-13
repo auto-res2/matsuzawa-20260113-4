@@ -1,0 +1,11 @@
+# Suppress warnings that are stylistic and don't affect compilation
+
+# Warning 1: Command terminated with space
+# Warning 2: Non-breaking space should be used
+# Warning 8: Wrong length of dash
+# Warning 13: Intersentence spacing
+# Warning 25: Braces around words
+# Warning 36: Space before parenthesis
+# Warning 40: Punctuation outside math mode
+
+CmdLine { -n1 -n2 -n8 -n13 -n25 -n36 -n40 }
