@@ -1,1 +1,34 @@
-wandb:\n  entity: gengaru617-personal\n  project: ctgr-tg_hydra_experiment\n  mode: online\nmode: full\nrun:\n  run_id: default-run\n  results_dir: ./results\n\n# Coupled defaults for training\ntraining:\n  learning_rate: 0.0002\n  batch_size: 8\n  epochs: 5\n  optimizer: adamw\n  warmup_steps: 200\n  weight_decay: 0.01\n  gradient_clip: 1.0\n  scheduler: cosine\n  seed: 42\n  reg_lambda: 0.01\n  meta_batch_size: 4\n\nmodel:\n  name: gemma-3-4b-it\n  base_channels: 16\n\ndataset:\n  name: VTAB+MD\n\noptuna:\n  enabled: true\n  n_trials: 20\n  search_spaces: []\n
+wandb:
+  entity: gengaru617-personal
+  project: ctgr-tg_hydra_experiment
+  mode: online
+mode: full
+run:
+  run_id: default-run
+  results_dir: ./results
+
+# Coupled defaults for training
+training:
+  learning_rate: 0.0002
+  batch_size: 8
+  epochs: 5
+  optimizer: adamw
+  warmup_steps: 200
+  weight_decay: 0.01
+  gradient_clip: 1.0
+  scheduler: cosine
+  seed: 42
+  reg_lambda: 0.01
+  meta_batch_size: 4
+
+model:
+  name: gemma-3-4b-it
+  base_channels: 16
+
+dataset:
+  name: VTAB+MD
+
+optuna:
+  enabled: true
+  n_trials: 20
+  search_spaces: []
