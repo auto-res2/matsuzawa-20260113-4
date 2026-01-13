@@ -16,11 +16,11 @@ from omegaconf import DictConfig
 
 @hydra.main(config_path="../config", config_name="config")
 def main(cfg: DictConfig) -> int:
-    results_dir = Path(cfg.run.results_dir) if hasattr(cfg, 'run') else Path('./results')
+    results_dir = Path(cfg.results_dir) if hasattr(cfg, 'results_dir') else Path('./results')
     results_dir.mkdir(parents=True, exist_ok=True)
 
     run_id = getattr(cfg.run, 'run_id', None) or cfg.run.get('run_id', 'default-run')
-    mode = getattr(cfg.run, 'mode', 'full')
+    mode = getattr(cfg, 'mode', 'full')
 
     trainer_path = Path(__file__).resolve().parents[0] / 'train.py'
     cmd = [sys.executable, str(trainer_path), f"run_id={run_id}", f"results_dir={str(results_dir)}", f"mode={mode}"]

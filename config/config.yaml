@@ -3,6 +3,7 @@ wandb:
   project: ctgr-tg_hydra_experiment
   mode: online
 mode: full
+results_dir: ./results
 run:
   run_id: default-run
   results_dir: ./results
